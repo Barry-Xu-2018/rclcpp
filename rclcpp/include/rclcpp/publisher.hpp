@@ -250,6 +250,11 @@ public:
   >
   publish(std::unique_ptr<T, ROSMessageTypeDeleter> msg)
   {
+    static uint32_t flag_1 = 0;
+    static uint32_t flag_2 = 0;
+    RCLCPP_WARN(
+      rclcpp::get_logger("rclcpp"),
+      "publish \"%s\" %d, %d", this->get_topic_name(), flag_1, flag_2);
     if (!intra_process_is_enabled_) {
       this->do_inter_process_publish(*msg);
       return;
@@ -264,10 +269,12 @@ public:
       get_subscription_count() > get_intra_process_subscription_count();
 
     if (inter_process_publish_needed) {
+      ++flag_1;
       auto shared_msg =
         this->do_intra_process_ros_message_publish_and_return_shared(std::move(msg));
       this->do_inter_process_publish(*shared_msg);
     } else {
+      ++flag_2;
       this->do_intra_process_ros_message_publish(std::move(msg));
     }
   }
@@ -531,6 +538,10 @@ protected:
       throw std::runtime_error("cannot publish msg which is a null pointer");
     }
 
+        RCLCPP_WARN(
+    rclcpp::get_logger("rclcpp"),
+      "publish \"%s\" do_intra_process_ros_message_publish", this->get_topic_name());
+
     ipm->template do_intra_process_publish<ROSMessageType, ROSMessageType, AllocatorT>(
       intra_process_publisher_id_,
       std::move(msg),
@@ -550,6 +561,9 @@ protected:
       throw std::runtime_error("cannot publish msg which is a null pointer");
     }
 
+    RCLCPP_WARN(
+      rclcpp::get_logger("rclcpp"),
+      "publish \"%s\" do_intra_process_ros_message_publish_and_return_shared", this->get_topic_name());
     return ipm->template do_intra_process_publish_and_return_shared<ROSMessageType, ROSMessageType,
              AllocatorT>(
       intra_process_publisher_id_,

@@ -24,6 +24,7 @@
 #include "rmw/impl/cpp/demangle.hpp"
 
 #include "rclcpp/guard_condition.hpp"
+#include "rclcpp/logger.hpp"
 #include "rclcpp/logging.hpp"
 #include "rclcpp/qos.hpp"
 #include "rclcpp/waitable.hpp"
@@ -188,6 +189,9 @@ protected:
       this->on_new_message_callback_(1);
     } else {
       this->unread_count_++;
+      RCLCPP_WARN(
+        rclcpp::get_logger("rclcpp"),
+        "%s %lu", topic_name_.c_str(), this->unread_count_);
     }
   }
 

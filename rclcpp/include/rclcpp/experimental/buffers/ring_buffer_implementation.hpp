@@ -63,6 +63,8 @@ public:
    */
   void enqueue(BufferT request)
   {
+    RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "In : %lu ", capacity_);
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     write_index_ = next_(write_index_);
@@ -83,6 +85,8 @@ public:
    */
   BufferT dequeue()
   {
+    RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "out : %lu ", capacity_);
+
     std::lock_guard<std::mutex> lock(mutex_);
 
     if (!has_data_()) {

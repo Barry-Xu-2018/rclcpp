@@ -91,6 +91,24 @@ public:
     waitable_handles_.clear();
   }
 
+  void check_handles() override
+  {
+    if (subscription_handles_.size()
+        + service_handles_.size()
+        + client_handles_.size()
+        + timer_handles_.size()
+        + waitable_handles_.size() != 0) {
+      RCLCPP_WARN(
+        rclcpp::get_logger("rclcpp"),
+        "sub %lu, ser: %lu, cli: %lu, tim: %lu, wait: %lu",
+        subscription_handles_.size(),
+        service_handles_.size(),
+        client_handles_.size(),
+        timer_handles_.size(),
+        waitable_handles_.size());      
+    }
+  }
+
   void remove_null_handles(rcl_wait_set_t * wait_set) override
   {
     // TODO(jacobperron): Check if wait set sizes are what we expect them to be?

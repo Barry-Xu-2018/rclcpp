@@ -682,6 +682,8 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
   {
     std::lock_guard<std::mutex> guard(mutex_);
 
+    memory_strategy_->check_handles();
+
     // Check weak_nodes_ to find any callback group that is not owned
     // by an executor and add it to the list of callbackgroups for
     // collect entities. Also exchange to false so it is not

@@ -98,6 +98,9 @@ public:
   virtual rcl_allocator_t
   get_allocator() = 0;
 
+  virtual void
+  check_handles() = 0;
+
   static rclcpp::SubscriptionBase::SharedPtr
   get_subscription_by_handle(
     const std::shared_ptr<const rcl_subscription_t> & subscriber_handle,
