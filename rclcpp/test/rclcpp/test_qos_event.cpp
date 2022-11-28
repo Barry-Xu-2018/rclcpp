@@ -471,10 +471,13 @@ TEST_F(TestQosEvent, test_pub_matched_unmatched_event_callback1)
     ex.spin_some(timeout);
     EXPECT_EQ(sub_matched_count, static_cast<size_t>(1));
     EXPECT_EQ(sub_unmatched_count, static_cast<size_t>(0));
+    sub_matched_count = 0;
+    sub_unmatched_count = 0;
   }
 
   ex.spin_some(timeout);
   EXPECT_EQ(sub_unmatched_count, static_cast<size_t>(1));
+  EXPECT_EQ(sub_matched_count, static_cast<size_t>(0));
 }
 
 TEST_F(TestQosEvent, test_sub_matched_unmatched_each_event_callback1)
@@ -501,16 +504,24 @@ TEST_F(TestQosEvent, test_sub_matched_unmatched_each_event_callback1)
   EXPECT_NO_THROW(
     sub->set_on_new_qos_event_callback(pub_unmatched_cb, RCL_SUBSCRIPTION_UNMATCHED));
 
+  rclcpp::executors::SingleThreadedExecutor ex;
+  ex.add_node(node->get_node_base_interface());
+
+  const auto timeout = std::chrono::milliseconds(500);
+
   {
     auto pub = node->create_publisher<test_msgs::msg::Empty>(topic_name, 10);
 
-    std::this_thread::sleep_for(500ms);
+    ex.spin_some(timeout);
     EXPECT_EQ(pub_matched_count, static_cast<size_t>(1));
     EXPECT_EQ(pub_unmatched_count, static_cast<size_t>(0));
+    pub_matched_count = 0;
+    pub_unmatched_count = 0;
   }
 
-  std::this_thread::sleep_for(500ms);
+  ex.spin_some(timeout);
   EXPECT_EQ(pub_unmatched_count, static_cast<size_t>(1));
+  EXPECT_EQ(pub_matched_count, static_cast<size_t>(0));
 }
 
 TEST_F(TestQosEvent, test_pub_matched_unmatched_event_callback2)
@@ -562,13 +573,18 @@ TEST_F(TestQosEvent, test_sub_matched_unmatched_each_event_callback2)
   auto sub = node->create_subscription<test_msgs::msg::Empty>(
     topic_name, 10, message_callback, sub_options);
 
+
+  rclcpp::executors::SingleThreadedExecutor ex;
+  ex.add_node(node->get_node_base_interface());
+
+  const auto timeout = std::chrono::milliseconds(500);
   {
     auto pub = node->create_publisher<test_msgs::msg::Empty>(topic_name, 10);
 
-    std::this_thread::sleep_for(500ms);
+    ex.spin_some(timeout);
     expected_pub_matched_count = 0;
     expected_pub_unmatched_count = 1;
   }
 
-  std::this_thread::sleep_for(500ms);
+  ex.spin_some(timeout);
 }
