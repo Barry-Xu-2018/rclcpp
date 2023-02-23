@@ -17,6 +17,7 @@
 
 #include <memory>
 #include <vector>
+#include <utility>
 
 #include "rcl/allocator.h"
 
@@ -121,9 +122,10 @@ public:
     }
     for (size_t i = 0; i < waitable_handles_.size(); ++i) {
       if (waitable_handles_[i]->is_ready(wait_set)) {
-        waitable_triggered_handles_.emplace_back(waitable_handles_[i]);
+        waitable_triggered_handles_.emplace_back(std::move(waitable_handles_[i]));
       }
     }
+    waitable_handles_.clear();
 
     subscription_handles_.erase(
       std::remove(subscription_handles_.begin(), subscription_handles_.end(), nullptr),
@@ -144,8 +146,6 @@ public:
       std::remove(timer_handles_.begin(), timer_handles_.end(), nullptr),
       timer_handles_.end()
     );
-
-    waitable_handles_.clear();
   }
 
   bool collect_entities(const WeakCallbackGroupsToNodesMap & weak_groups_to_nodes) override
