@@ -35,6 +35,7 @@
 #include "rclcpp/logger.hpp"
 #include "rclcpp/node.hpp"
 #include "rclcpp/node_interfaces/node_base.hpp"
+#include "rclcpp/node_interfaces/node_builtin_executor.hpp"
 #include "rclcpp/node_interfaces/node_clock.hpp"
 #include "rclcpp/node_interfaces/node_graph.hpp"
 #include "rclcpp/node_interfaces/node_logging.hpp"
@@ -119,6 +120,9 @@ LifecycleNode::LifecycleNode(
 {
   impl_->init(enable_communication_interface);
 
+  node_builtin_executor_ = std::make_shared<rclcpp::node_interfaces::NodeBuiltinExecutor>(
+    node_base_, node_topics_, node_services_, node_logging_, node_options_);
+
   register_on_configure(
     std::bind(
       &LifecycleNodeInterface::on_configure, this,
@@ -142,6 +146,7 @@ LifecycleNode::LifecycleNode(
 LifecycleNode::~LifecycleNode()
 {
   // release sub-interfaces in an order that allows them to consult with node_base during tear-down
+  node_builtin_executor_.reset();
   node_waitables_.reset();
   node_time_source_.reset();
   node_parameters_.reset();

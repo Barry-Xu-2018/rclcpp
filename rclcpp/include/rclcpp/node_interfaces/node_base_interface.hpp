@@ -112,6 +112,22 @@ public:
     rclcpp::CallbackGroupType group_type,
     bool automatically_add_to_executor_with_node = true) = 0;
 
+  /// Return a callback group for the time-sensitive tasks such as clock.
+  /**
+   * This callback group is executed in internal executor.
+   * Normal tasks use get_builtin_callback_group().
+   */
+  RCLCPP_PUBLIC
+  virtual
+  rclcpp::CallbackGroup::SharedPtr
+  get_builtin_performance_callback_group() = 0;
+
+  /// Return a callback group which is executed in internal executor.
+  RCLCPP_PUBLIC
+  virtual
+  rclcpp::CallbackGroup::SharedPtr
+  get_builtin_callback_group() = 0;
+
   /// Return the default callback group.
   RCLCPP_PUBLIC
   virtual
