@@ -20,7 +20,6 @@
 #include "rclcpp/logger.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/node_interfaces/detail/node_interfaces_helpers.hpp"
-#include "rclcpp/node_options.hpp"
 #include "rclcpp/visibility_control.hpp"
 
 namespace rclcpp

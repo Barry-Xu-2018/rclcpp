@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef RCLCPP__NODE_INTERFACES__NODE_BUILTIN_EXECUTOR_HPP_
-#define RCLCPP__NODE_INTERFACES__NODE_BUILTIN_EXECUTOR_HPP_
+#ifndef RCLCPP__NODE_BUILTIN_EXECUTOR_HPP_
+#define RCLCPP__NODE_BUILTIN_EXECUTOR_HPP_
+
+#include <memory>
 
 #include "rclcpp/executor.hpp"
 #include "rclcpp/macros.hpp"
@@ -25,11 +27,11 @@
 #include "rclcpp/node_options.hpp"
 #include "rclcpp/visibility_control.hpp"
 
+#include "rcl_interfaces/srv/get_logger_levels.hpp"
+#include "rcl_interfaces/srv/set_logger_levels.hpp"
+
 namespace rclcpp
 {
-namespace node_interfaces
-{
-
 class NodeBuiltinExecutor
 {
 public:
@@ -46,23 +48,12 @@ public:
   RCLCPP_PUBLIC
   ~NodeBuiltinExecutor();
 
-  RCLCPP_PUBLIC
-  bool builtin_thread_joinable();
-
 private:
   RCLCPP_DISABLE_COPY(NodeBuiltinExecutor)
-
-  node_interfaces::NodeBaseInterface::SharedPtr node_base_;
-  node_interfaces::NodeTopicsInterface::SharedPtr node_topics_;
-  node_interfaces::NodeServicesInterface::SharedPtr node_services_;
-  node_interfaces::NodeLoggingInterface::SharedPtr node_logging_;
-
-  rclcpp::Executor::SharedPtr executor_;
-  std::promise<void> executor_promise_;
-  std::thread thread_;
+  class NodeBuiltinExecutorImpl;
+  std::shared_ptr<NodeBuiltinExecutorImpl> impl_;
 };
 
-}  // namespace node_interfaces
 }  // namespace rclcpp
 
-#endif  // RCLCPP__NODE_INTERFACES__NODE_BUILTIN_EXECUTOR_HPP_
+#endif  // RCLCPP__NODE_BUILTIN_EXECUTOR_HPP_

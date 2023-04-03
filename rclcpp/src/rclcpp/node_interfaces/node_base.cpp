@@ -210,30 +210,6 @@ NodeBase::create_callback_group(
   return group;
 }
 
-RCLCPP_PUBLIC
-rclcpp::CallbackGroup::SharedPtr
-NodeBase::get_builtin_performance_callback_group()
-{
-  if (!builtin_performance_callback_group_) {
-    builtin_performance_callback_group_ = create_callback_group(
-      rclcpp::CallbackGroupType::MutuallyExclusive,
-      false);
-  }
-  return builtin_performance_callback_group_;
-}
-
-RCLCPP_PUBLIC
-rclcpp::CallbackGroup::SharedPtr
-NodeBase::get_builtin_callback_group()
-{
-  if (!builtin_callback_group_) {
-    builtin_callback_group_ = create_callback_group(
-      rclcpp::CallbackGroupType::MutuallyExclusive,
-      false);
-  }
-  return builtin_callback_group_;
-}
-
 rclcpp::CallbackGroup::SharedPtr
 NodeBase::get_default_callback_group()
 {
