@@ -17,18 +17,12 @@
 
 #include <memory>
 
-#include "rclcpp/executor.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
-#include "rclcpp/node_interfaces/node_logging_interface.hpp"
-#include "rclcpp/node_interfaces/node_parameters_interface.hpp"
 #include "rclcpp/node_interfaces/node_services_interface.hpp"
 #include "rclcpp/node_interfaces/node_topics_interface.hpp"
 #include "rclcpp/node_options.hpp"
 #include "rclcpp/visibility_control.hpp"
-
-#include "rcl_interfaces/srv/get_logger_levels.hpp"
-#include "rcl_interfaces/srv/set_logger_levels.hpp"
 
 namespace rclcpp
 {
@@ -42,11 +36,10 @@ public:
     node_interfaces::NodeBaseInterface::SharedPtr node_base,
     node_interfaces::NodeTopicsInterface::SharedPtr node_topics,
     node_interfaces::NodeServicesInterface::SharedPtr node_services,
-    node_interfaces::NodeLoggingInterface::SharedPtr node_logging,
     const NodeOptions & node_options);
 
   RCLCPP_PUBLIC
-  ~NodeBuiltinExecutor();
+  ~NodeBuiltinExecutor() = default;
 
 private:
   RCLCPP_DISABLE_COPY(NodeBuiltinExecutor)

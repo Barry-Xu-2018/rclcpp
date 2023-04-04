@@ -12,24 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "rclcpp/executor.hpp"
 #include "rclcpp/node_builtin_executor.hpp"
 #include "rclcpp/executors/multi_threaded_executor.hpp"
 #include "rclcpp/executors/single_threaded_executor.hpp"
 #include "rclcpp/node_interfaces/node_logging.hpp"
+
+#include "rcl_interfaces/srv/get_logger_levels.hpp"
+#include "rcl_interfaces/srv/set_logger_levels.hpp"
 
 using rclcpp::NodeBuiltinExecutor;
 
 class NodeBuiltinExecutor::NodeBuiltinExecutorImpl
 {
 public:
-  RCLCPP_SMART_PTR_ALIASES_ONLY(NodeBuiltinExecutor)
-
   RCLCPP_PUBLIC
   explicit NodeBuiltinExecutorImpl(
     node_interfaces::NodeBaseInterface::SharedPtr node_base,
     node_interfaces::NodeTopicsInterface::SharedPtr node_topics,
     node_interfaces::NodeServicesInterface::SharedPtr node_services,
-    node_interfaces::NodeLoggingInterface::SharedPtr node_logging,
     const NodeOptions & node_options);
 
   RCLCPP_PUBLIC
@@ -47,7 +48,6 @@ private:
   node_interfaces::NodeBaseInterface::SharedPtr node_base_;
   node_interfaces::NodeTopicsInterface::SharedPtr node_topics_;
   node_interfaces::NodeServicesInterface::SharedPtr node_services_;
-  node_interfaces::NodeLoggingInterface::SharedPtr node_logging_;
 
   rclcpp::Service<rcl_interfaces::srv::GetLoggerLevels>::SharedPtr get_loggers_service_;
   rclcpp::Service<rcl_interfaces::srv::SetLoggerLevels>::SharedPtr set_loggers_service_;
@@ -63,31 +63,24 @@ NodeBuiltinExecutor::NodeBuiltinExecutor(
   node_interfaces::NodeBaseInterface::SharedPtr node_base,
   node_interfaces::NodeTopicsInterface::SharedPtr node_topics,
   node_interfaces::NodeServicesInterface::SharedPtr node_services,
-  node_interfaces::NodeLoggingInterface::SharedPtr node_logging,
   const NodeOptions & node_options
 )
 : impl_(new NodeBuiltinExecutorImpl(
       node_base,
       node_topics,
       node_services,
-      node_logging,
       node_options
 ))
-{}
-
-NodeBuiltinExecutor::~NodeBuiltinExecutor()
 {}
 
 NodeBuiltinExecutor::NodeBuiltinExecutorImpl::NodeBuiltinExecutorImpl(
   node_interfaces::NodeBaseInterface::SharedPtr node_base,
   node_interfaces::NodeTopicsInterface::SharedPtr node_topics,
   node_interfaces::NodeServicesInterface::SharedPtr node_services,
-  node_interfaces::NodeLoggingInterface::SharedPtr node_logging,
   const NodeOptions & node_options)
 : node_base_(node_base),
   node_topics_(node_topics),
-  node_services_(node_services),
-  node_logging_(node_logging)
+  node_services_(node_services)
 {
   if (node_options.enable_logger_service()) {
     add_logger_services();
@@ -124,7 +117,7 @@ NodeBuiltinExecutor::NodeBuiltinExecutorImpl::~NodeBuiltinExecutorImpl()
 void
 NodeBuiltinExecutor::NodeBuiltinExecutorImpl::add_logger_services()
 {
-  const rclcpp::QoS & qos_profile = rclcpp::ServicesQoS();
+  rclcpp::ServicesQoS qos_profile;
   const std::string node_name = node_base_->get_name();
   auto callback_group = get_callback_group();
 
@@ -137,14 +130,14 @@ NodeBuiltinExecutor::NodeBuiltinExecutorImpl::add_logger_services()
       std::shared_ptr<rcl_interfaces::srv::GetLoggerLevels::Response> response)
     {
       int ret = 0;
-      for (auto & n : request->names) {
+      for (auto & name : request->names) {
         rcl_interfaces::msg::LoggerLevel level;
-        level.name = n;
-        ret = rcutils_logging_get_logger_level(n.c_str());
+        level.name = name;
+        ret = rcutils_logging_get_logger_level(name.c_str());
         if (ret < 0) {
           level.level = 0;
         } else {
-          level.level = (uint8_t)ret;
+          level.level = static_cast<uint8_t>(ret);
         }
         response->levels.push_back(std::move(level));
       }
@@ -161,8 +154,8 @@ NodeBuiltinExecutor::NodeBuiltinExecutorImpl::add_logger_services()
     {
       int ret = 0;
       auto result = rcl_interfaces::msg::SetLoggerLevelsResult();
-      for (auto & l : request->levels) {
-        ret = rcutils_logging_set_logger_level(l.name.c_str(), l.level);
+      for (auto & level : request->levels) {
+        ret = rcutils_logging_set_logger_level(level.name.c_str(), level.level);
         if (ret != RCUTILS_RET_OK) {
           result.successful = false;
           result.reason = rcutils_get_error_string().str;

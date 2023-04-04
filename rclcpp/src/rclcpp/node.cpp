@@ -212,7 +212,6 @@ Node::Node(
       node_base_,
       node_topics_,
       node_services_,
-      node_logging_,
       options
     )),
   node_options_(options),

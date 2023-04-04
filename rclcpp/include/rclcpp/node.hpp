@@ -1589,7 +1589,7 @@ private:
   rclcpp::node_interfaces::NodeTimeSourceInterface::SharedPtr node_time_source_;
   rclcpp::node_interfaces::NodeWaitablesInterface::SharedPtr node_waitables_;
 
-  rclcpp::NodeBuiltinExecutor::SharedPtr node_builtin_executor_;
+  rclcpp::NodeBuiltinExecutor::UniquePtr node_builtin_executor_;
 
   const rclcpp::NodeOptions node_options_;
   const std::string sub_namespace_;
