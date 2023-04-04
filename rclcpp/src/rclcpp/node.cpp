@@ -27,6 +27,7 @@
 #include "rclcpp/exceptions.hpp"
 #include "rclcpp/graph_listener.hpp"
 #include "rclcpp/node.hpp"
+#include "rclcpp/node_builtin_executor.hpp"
 #include "rclcpp/node_interfaces/node_base.hpp"
 #include "rclcpp/node_interfaces/node_clock.hpp"
 #include "rclcpp/node_interfaces/node_graph.hpp"
@@ -207,6 +208,12 @@ Node::Node(
       options.use_clock_thread()
     )),
   node_waitables_(new rclcpp::node_interfaces::NodeWaitables(node_base_.get())),
+  node_builtin_executor_(new rclcpp::NodeBuiltinExecutor(
+      node_base_,
+      node_topics_,
+      node_services_,
+      options
+    )),
   node_options_(options),
   sub_namespace_(""),
   effective_namespace_(create_effective_namespace(this->get_namespace(), sub_namespace_))
@@ -268,6 +275,7 @@ Node::Node(
 Node::~Node()
 {
   // release sub-interfaces in an order that allows them to consult with node_base during tear-down
+  node_builtin_executor_.reset();
   node_waitables_.reset();
   node_time_source_.reset();
   node_parameters_.reset();
