@@ -131,15 +131,15 @@ NodeBuiltinExecutor::NodeBuiltinExecutorImpl::add_logger_services()
     {
       int ret = 0;
       for (auto & name : request->names) {
-        rcl_interfaces::msg::LoggerLevel level;
-        level.name = name;
+        rcl_interfaces::msg::LoggerLevel logger_level;
+        logger_level.name = name;
         ret = rcutils_logging_get_logger_level(name.c_str());
         if (ret < 0) {
-          level.level = 0;
+          logger_level.level = 0;
         } else {
-          level.level = static_cast<uint8_t>(ret);
+          logger_level.level = static_cast<uint8_t>(ret);
         }
-        response->levels.push_back(std::move(level));
+        response->levels.push_back(std::move(logger_level));
       }
     },
     qos_profile, callback_group);
