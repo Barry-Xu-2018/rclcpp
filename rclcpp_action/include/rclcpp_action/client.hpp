@@ -29,11 +29,13 @@
 #include "rcl/event_callback.h"
 
 #include "rclcpp/exceptions.hpp"
+#include "rclcpp/clock.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
 #include "rclcpp/node_interfaces/node_logging_interface.hpp"
 #include "rclcpp/node_interfaces/node_graph_interface.hpp"
 #include "rclcpp/logger.hpp"
+#include "rclcpp/qos.hpp"
 #include "rclcpp/time.hpp"
 #include "rclcpp/waitable.hpp"
 
@@ -179,6 +181,19 @@ public:
 
   // End Waitables API
   // -----------------
+
+  /// Configure client introspection for action internal clients
+  /**
+   * \param[in] clock clock to use to generate introspection timestamps
+   * \param[in] qos_service_event_pub QoS settings to use when creating the introspection publisher
+   * \param[in] introspection_state the state to set introspection to
+   */
+  RCLCPP_ACTION_PUBLIC
+  void
+  configure_introspection(
+    rclcpp::Clock::SharedPtr clock,
+    const rclcpp::QoS & qos_service_event_pub,
+    rcl_service_introspection_state_t introspection_state);
 
 protected:
   RCLCPP_ACTION_PUBLIC

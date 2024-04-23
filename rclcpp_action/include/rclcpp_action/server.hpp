@@ -27,9 +27,11 @@
 #include "rcl_action/action_server.h"
 #include "rosidl_runtime_c/action_type_support_struct.h"
 #include "rosidl_typesupport_cpp/action_type_support.hpp"
+#include "rclcpp/clock.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
 #include "rclcpp/node_interfaces/node_clock_interface.hpp"
 #include "rclcpp/node_interfaces/node_logging_interface.hpp"
+#include "rclcpp/qos.hpp"
 #include "rclcpp/waitable.hpp"
 
 #include "rclcpp_action/visibility_control.hpp"
@@ -178,6 +180,19 @@ public:
 
   // End Waitables API
   // -----------------
+
+  /// Configure service introspection for action internal services
+  /**
+   * \param[in] clock clock to use to generate introspection timestamps
+   * \param[in] qos_service_event_pub QoS settings to use when creating the introspection publisher
+   * \param[in] introspection_state the state to set introspection to
+   */
+  RCLCPP_ACTION_PUBLIC
+  void
+  configure_introspection(
+    rclcpp::Clock::SharedPtr clock,
+    const rclcpp::QoS & qos_service_event_pub,
+    rcl_service_introspection_state_t introspection_state);
 
 protected:
   RCLCPP_ACTION_PUBLIC
