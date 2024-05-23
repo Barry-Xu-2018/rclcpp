@@ -28,6 +28,8 @@
 
 #include "rcl/event_callback.h"
 
+#include "rmw/rmw.h"
+
 #include "rclcpp/exceptions.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
@@ -35,16 +37,24 @@
 #include "rclcpp/node_interfaces/node_graph_interface.hpp"
 #include "rclcpp/logger.hpp"
 #include "rclcpp/time.hpp"
+#include "rclcpp/typesupport_helpers.hpp"
 #include "rclcpp/waitable.hpp"
 
 #include "rosidl_runtime_c/action_type_support_struct.h"
 #include "rosidl_typesupport_cpp/action_type_support.hpp"
+#include "rosidl_typesupport_introspection_cpp/identifier.hpp"
+#include "rosidl_typesupport_introspection_cpp/message_introspection.hpp"
 
 #include "rclcpp_action/client_goal_handle.hpp"
 #include "rclcpp_action/exceptions.hpp"
+#include "rclcpp_action/generic_client_goal_handle.hpp"
 #include "rclcpp_action/types.hpp"
 #include "rclcpp_action/visibility_control.hpp"
 
+#include "action_msgs/msg/goal_response.hpp"
+#include "action_msgs/srv/cancel_goal.hpp"
+#include "action_msgs/msg/goal_status_array.hpp"
+#include "unique_identifier_msgs/msg/uuid.hpp"
 
 namespace rclcpp_action
 {
@@ -822,6 +832,627 @@ private:
   }
 
   std::map<GoalUUID, typename GoalHandle::WeakPtr> goal_handles_;
+  std::recursive_mutex goal_handles_mutex_;
+};
+
+/// Action Generic Client
+/**
+ * This class creates an action generic client.
+ *
+ * To create an instance of an action client use `rclcpp_action::create_generic_client()`.
+ */
+class GenericClient : public ClientBase
+{
+public:
+  RCLCPP_SMART_PTR_DEFINITIONS_NOT_COPYABLE(GenericClient)
+
+  using CancelRequest = typename action_msgs::srv::CancelGoal_Request;
+  using CancelResponse = typename action_msgs::srv::CancelGoal_Response;
+  using WrappedResult = typename GenericClientGoalHandle::WrappedResult;
+  using GoalResponseCallback = std::function<void (typename GenericClientGoalHandle::SharedPtr)>;
+  using FeedbackCallback = typename GenericClientGoalHandle::FeedbackCallback;
+  using ResultCallback = typename GenericClientGoalHandle::ResultCallback;
+  using CancelCallback = std::function<void (CancelResponse::SharedPtr)>;
+
+  using IntrospectionMessageMembersPtr =
+    const rosidl_typesupport_introspection_cpp::MessageMembers *;
+
+  /// Options for sending a goal.
+  /**
+   * This struct is used to pass parameters to the function `async_send_goal`.
+   */
+  struct SendGoalOptions
+  {
+    SendGoalOptions()
+    : goal_response_callback(nullptr),
+      feedback_callback(nullptr),
+      result_callback(nullptr)
+    {
+    }
+
+    /// Function called when the goal is accepted or rejected.
+    /**
+     * Takes a single argument that is a goal handle shared pointer.
+     * If the goal is accepted, then the pointer points to a valid goal handle.
+     * If the goal is rejected, then pointer has the value `nullptr`.
+     */
+    GoalResponseCallback goal_response_callback;
+
+    /// Function called whenever feedback is received for the goal.
+    FeedbackCallback feedback_callback;
+
+    /// Function called when the result for the goal is received.
+    ResultCallback result_callback;
+  };
+
+  /// Construct an action generic client.
+  /**
+   * This constructs an action generic client, but it will not work until it has been added to a
+   * node.
+   * Use `rclcpp_action::create_generic_client()` to both construct and add to a node.
+   *
+   * \param[in] node_base A pointer to the base interface of a node.
+   * \param[in] node_graph A pointer to an interface that allows getting graph information about
+   *   a node.
+   * \param[in] node_logging A pointer to an interface that allows getting a node's logger.
+   * \param[in] action_name The action name.
+   * \param[in] typesupport_lib A pointer to type support library for the action type
+   * \param[in] action_typesupport_handle the action type support handle
+   * \param[in] client_options Options to pass to the underlying `rcl_action::rcl_action_client_t`.
+   */
+  GenericClient(
+    rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_base,
+    rclcpp::node_interfaces::NodeGraphInterface::SharedPtr node_graph,
+    rclcpp::node_interfaces::NodeLoggingInterface::SharedPtr node_logging,
+    const std::string & action_name,
+    std::shared_ptr<rcpputils::SharedLibrary> typesupport_lib,
+    const rosidl_action_type_support_t * action_typesupport_handle,
+    const rcl_action_client_options_t & client_options = rcl_action_client_get_default_options()
+  )
+  : ClientBase(
+      node_base, node_graph, node_logging, action_name,
+      action_typesupport_handle,
+      client_options),
+    ts_lib_(std::move(typesupport_lib)),
+    ts_handle_(action_typesupport_handle)
+  {
+    auto goal_service_request_type_support_intro = get_message_typesupport_handle(
+      ts_handle_->goal_service_type_support->request_typesupport,
+      rosidl_typesupport_introspection_cpp::typesupport_identifier);
+    goal_service_request_type_members_ =
+      static_cast<IntrospectionMessageMembersPtr>(goal_service_request_type_support_intro->data);
+
+    auto result_service_response_type_support_intro = get_message_typesupport_handle(
+      ts_handle_->result_service_type_support->response_typesupport,
+      rosidl_typesupport_introspection_cpp::typesupport_identifier);
+    result_service_response_type_members_ =
+      static_cast<IntrospectionMessageMembersPtr>(result_service_response_type_support_intro->data);
+
+    auto cancel_service_reponse_type_support_intro = get_message_typesupport_handle(
+      ts_handle_->cancel_service_type_support->response_typesupport,
+      rosidl_typesupport_introspection_cpp::typesupport_identifier);
+    cancel_service_response_type_members_ =
+      static_cast<IntrospectionMessageMembersPtr>(cancel_service_reponse_type_support_intro->data);
+
+    auto feedback_type_support_intro = get_message_typesupport_handle(
+      ts_handle_->feedback_message_type_support,
+      rosidl_typesupport_introspection_cpp::typesupport_identifier);
+    feedback_type_members_ =
+      static_cast<IntrospectionMessageMembersPtr>(feedback_type_support_intro->data);
+  }
+
+  /// Send an action goal and asynchronously get the result.
+  /**
+   * If the goal is accepted by an action server, the returned future is set to a `GenericClientGoalHandle::SharedPtr`.
+   * If the goal is rejected by an action server, then the future is set to a `nullptr`.
+   *
+   * The goal handle in the future is used to monitor the status of the goal and get the final result.
+   *
+   * If callbacks were set in @param options, you will receive callbacks, as long as you hold a reference
+   * to the shared pointer contained in the returned future, or rclcpp_action::GenericClient is destroyed. Dropping
+   * the shared pointer to the goal handle will not cancel the goal. In order to cancel it, you must explicitly
+   * call async_cancel_goal.
+   *
+   * WARNING this method has inconsistent behaviour and a memory leak bug.
+   * If you set the result callback in @param options, the handle will be self referencing, and you will receive
+   * callbacks even though you do not hold a reference to the shared pointer. In this case, the self reference will
+   * be deleted if the result callback was received. If there is no result callback, there will be a memory leak.
+   *
+   * To prevent the memory leak, you may call stop_callbacks() explicit. This will delete the self reference.
+   *
+   * \param[in] goal The goal request.
+   * \param[in] options Options for sending the goal request. Contains references to callbacks for
+   *   the goal response (accepted/rejected), feedback, and the final result.
+   * \return A future that completes when the goal has been accepted or rejected.
+   *   If the goal is rejected, then the result will be a `nullptr`.
+   */
+  std::shared_future<typename GenericClientGoalHandle::SharedPtr>
+  async_send_goal(const rmw_serialized_message_t * goal_request, const SendGoalOptions & options = SendGoalOptions())
+  {
+    // Put promise in the heap to move it around.
+    auto promise = std::make_shared<std::promise<typename GenericClientGoalHandle::SharedPtr>>();
+    std::shared_future<typename GenericClientGoalHandle::SharedPtr> future(promise->get_future());
+
+    auto do_nothing = [](void *ptr) {
+      (void)ptr;
+    };
+    std::shared_ptr<void> goal_request_msg(static_cast<void *>(goal_request->buffer), do_nothing);
+
+    // Get goal_id
+    auto ts_handle =
+      rosidl_typesupport_cpp::get_message_type_support_handle<unique_identifier_msgs::msg::UUID>();
+    auto uuid = unique_identifier_msgs::msg::UUID();
+    auto ret = rmw_deserialize(
+        goal_request,
+        ts_handle,
+        reinterpret_cast<void *>(&uuid));
+      if (ret != RMW_RET_OK) {
+        throw std::runtime_error(
+                "Failed to deserialize goal request message !");
+      }
+
+    this->send_goal_request(
+      goal_request_msg,
+      [this, &uuid, options, promise](std::shared_ptr<void> response) mutable
+      {
+        auto goal_response = std::static_pointer_cast<action_msgs::msg::GoalResponse>(response);
+
+        if (!goal_response->accepted) {
+          promise->set_value(nullptr);
+          if (options.goal_response_callback) {
+            options.goal_response_callback(nullptr);
+          }
+          return;
+        }
+        GoalInfo goal_info;
+        goal_info.goal_id.uuid = uuid.uuid;
+        goal_info.stamp = goal_response->stamp;
+        // Do not use std::make_shared as friendship cannot be forwarded.
+        std::shared_ptr<GenericClientGoalHandle> goal_handle(
+          new GenericClientGoalHandle(goal_info, options.feedback_callback, options.result_callback));
+        {
+          std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+          goal_handles_[goal_handle->get_goal_id()] = goal_handle;
+        }
+        promise->set_value(goal_handle);
+        if (options.goal_response_callback) {
+          options.goal_response_callback(goal_handle);
+        }
+
+        if (options.result_callback) {
+          this->make_result_aware(goal_handle);
+        }
+      });
+
+    // TODO(jacobperron): Encapsulate into it's own function and
+    //                    consider exposing an option to disable this cleanup
+    // To prevent the list from growing out of control, forget about any goals
+    // with no more user references
+    {
+      std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+      auto goal_handle_it = goal_handles_.begin();
+      while (goal_handle_it != goal_handles_.end()) {
+        if (!goal_handle_it->second.lock()) {
+          RCLCPP_DEBUG(
+            this->get_logger(),
+            "Dropping weak reference to goal handle during send_goal()");
+          goal_handle_it = goal_handles_.erase(goal_handle_it);
+        } else {
+          ++goal_handle_it;
+        }
+      }
+    }
+
+    return future;
+  }
+
+  /// Asynchronously get the result for an active goal.
+  /**
+   * \throws exceptions::UnknownGoalHandleError If the goal unknown or already reached a terminal
+   *   state, or if there was an error requesting the result.
+   * \param[in] goal_handle The goal handle for which to get the result.
+   * \param[in] result_callback Optional callback that is called when the result is received.
+   * \return A future that is set to the goal result when the goal is finished.
+   */
+  std::shared_future<WrappedResult>
+  async_get_result(
+    typename GenericClientGoalHandle::SharedPtr goal_handle,
+    ResultCallback result_callback = nullptr)
+  {
+    std::lock_guard<std::recursive_mutex> lock(goal_handles_mutex_);
+    if (goal_handles_.count(goal_handle->get_goal_id()) == 0) {
+      throw exceptions::UnknownGoalHandleError();
+    }
+    if (goal_handle->is_invalidated()) {
+      // This case can happen if there was a failure to send the result request
+      // during the goal response callback
+      throw goal_handle->invalidate_exception_;
+    }
+    if (result_callback) {
+      // This will override any previously registered callback
+      goal_handle->set_result_callback(result_callback);
+    }
+    this->make_result_aware(goal_handle);
+    return goal_handle->async_get_result();
+  }
+
+  /// Asynchronously request a goal be canceled.
+  /**
+   * \throws exceptions::UnknownGoalHandleError If the goal is unknown or already reached a
+   *   terminal state.
+   * \param[in] goal_handle The goal handle requesting to be canceled.
+   * \param[in] cancel_callback Optional callback that is called when the response is received.
+   *   The callback takes one parameter: a shared pointer to the CancelResponse message.
+   * \return A future to a CancelResponse message that is set when the request has been
+   * acknowledged by an action server.
+   * See
+   * <a href="https://github.com/ros2/rcl_interfaces/blob/master/action_msgs/srv/CancelGoal.srv">
+   * action_msgs/CancelGoal.srv</a>.
+   */
+  std::shared_future<typename CancelResponse::SharedPtr>
+  async_cancel_goal(
+    typename GenericClientGoalHandle::SharedPtr goal_handle,
+    CancelCallback cancel_callback = nullptr)
+  {
+    std::lock_guard<std::recursive_mutex> lock(goal_handles_mutex_);
+    if (goal_handles_.count(goal_handle->get_goal_id()) == 0) {
+      throw exceptions::UnknownGoalHandleError();
+    }
+    auto cancel_request = std::make_shared<CancelRequest>();
+    // cancel_request->goal_info.goal_id = goal_handle->get_goal_id();
+    cancel_request->goal_info.goal_id.uuid = goal_handle->get_goal_id();
+    return async_cancel(cancel_request, cancel_callback);
+  }
+
+  /// Asynchronously request for all goals to be canceled.
+  /**
+   * \param[in] cancel_callback Optional callback that is called when the response is received.
+   *   The callback takes one parameter: a shared pointer to the CancelResponse message.
+   * \return A future to a CancelResponse message that is set when the request has been
+   * acknowledged by an action server.
+   * See
+   * <a href="https://github.com/ros2/rcl_interfaces/blob/master/action_msgs/srv/CancelGoal.srv">
+   * action_msgs/CancelGoal.srv</a>.
+   */
+  std::shared_future<typename CancelResponse::SharedPtr>
+  async_cancel_all_goals(CancelCallback cancel_callback = nullptr)
+  {
+    auto cancel_request = std::make_shared<CancelRequest>();
+    // std::fill(cancel_request->goal_info.goal_id.uuid, 0u);
+    std::fill(
+      cancel_request->goal_info.goal_id.uuid.begin(),
+      cancel_request->goal_info.goal_id.uuid.end(), 0u);
+    return async_cancel(cancel_request, cancel_callback);
+  }
+
+  /// Stops the callbacks for the goal in a thread safe way
+  /**
+   * This will NOT cancel the goal, it will only stop the callbacks.
+   *
+   * After the call to this function, it is guaranteed that there
+   * will be no more callbacks from the goal. This is not guaranteed
+   * if multiple threads are involved, and the goal_handle is just
+   * dropped.
+   *
+   * \param[in] goal_handle The goal were the callbacks shall be stopped
+   */
+  void stop_callbacks(typename GenericClientGoalHandle::SharedPtr goal_handle)
+  {
+    goal_handle->set_feedback_callback(typename GenericClientGoalHandle::FeedbackCallback());
+    goal_handle->set_result_callback(typename GenericClientGoalHandle::ResultCallback());
+
+    std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+    const GoalUUID & goal_id = goal_handle->get_goal_id();
+    auto it = goal_handles_.find(goal_id);
+    if (goal_handles_.end() == it) {
+      // someone else already deleted the entry
+      // e.g. the result callback
+      RCLCPP_DEBUG(
+        this->get_logger(),
+        "Given goal is unknown. Ignoring...");
+      return;
+    }
+    goal_handles_.erase(it);
+  }
+
+  /// Stops the callbacks for the goal in a thread safe way
+  /**
+   * For further information see stop_callbacks(typename GenericGoalHandle::SharedPtr goal_handle)
+   */
+  void stop_callbacks(const GoalUUID & goal_id)
+  {
+    typename GenericClientGoalHandle::SharedPtr goal_handle;
+    {
+      std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+      auto it = goal_handles_.find(goal_id);
+      if (goal_handles_.end() == it) {
+        // someone else already deleted the entry
+        // e.g. the result callback
+        RCLCPP_DEBUG(
+          this->get_logger(),
+          "Given goal is unknown. Ignoring...");
+        return;
+      }
+
+      goal_handle = it->second.lock();
+    }
+
+    if (goal_handle) {
+      stop_callbacks(goal_handle);
+    }
+  }
+
+  /// Asynchronously request all goals at or before a specified time be canceled.
+  /**
+   * \param[in] stamp The timestamp for the cancel goal request.
+   * \param[in] cancel_callback Optional callback that is called when the response is received.
+   *   The callback takes one parameter: a shared pointer to the CancelResponse message.
+   * \return A future to a CancelResponse message that is set when the request has been
+   * acknowledged by an action server.
+   * See
+   * <a href="https://github.com/ros2/rcl_interfaces/blob/master/action_msgs/srv/CancelGoal.srv">
+   * action_msgs/CancelGoal.srv</a>.
+   */
+  std::shared_future<typename CancelResponse::SharedPtr>
+  async_cancel_goals_before(
+    const rclcpp::Time & stamp,
+    CancelCallback cancel_callback = nullptr)
+  {
+    auto cancel_request = std::make_shared<CancelRequest>();
+    // std::fill(cancel_request->goal_info.goal_id.uuid, 0u);
+    std::fill(
+      cancel_request->goal_info.goal_id.uuid.begin(),
+      cancel_request->goal_info.goal_id.uuid.end(), 0u);
+    cancel_request->goal_info.stamp = stamp;
+    return async_cancel(cancel_request, cancel_callback);
+  }
+
+  virtual
+  ~GenericClient()
+  {
+    std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+    auto it = goal_handles_.begin();
+    while (it != goal_handles_.end()) {
+      typename GenericClientGoalHandle::SharedPtr goal_handle = it->second.lock();
+      if (goal_handle) {
+        goal_handle->invalidate(exceptions::UnawareGoalHandleError());
+      }
+      it = goal_handles_.erase(it);
+    }
+  }
+
+private:
+  /// \internal
+  std::shared_ptr<void>
+  create_goal_response() const override
+  {
+    using GoalResponse = typename action_msgs::msg::GoalResponse;
+    return std::shared_ptr<void>(new GoalResponse());
+  }
+
+  /// \internal
+  std::shared_ptr<void>
+  create_message(IntrospectionMessageMembersPtr message_members) const
+  {
+    void * message = new uint8_t[message_members->size_of_];
+    message_members->init_function(message, rosidl_runtime_cpp::MessageInitialization::ZERO);
+    return std::shared_ptr<void>(
+      message,
+      [message_members](void * p)
+      {
+        message_members->fini_function(p);
+        delete[] reinterpret_cast<uint8_t *>(p);
+      });
+  }
+
+  /// \internal
+  std::shared_ptr<void>
+  create_result_response() const override
+  {
+    return create_message(result_service_response_type_members_);
+  }
+
+  /// \internal
+  std::shared_ptr<void>
+  create_cancel_response() const override
+  {
+    return create_message(cancel_service_response_type_members_);
+  }
+
+  /// \internal
+  std::shared_ptr<void>
+  create_feedback_message() const override
+  {
+    return create_message(feedback_type_members_);
+  }
+
+  /// \internal
+  void
+  handle_feedback_message(std::shared_ptr<void> message) override
+  {
+    size_t goal_id_offset = 0;
+    size_t feedback_offset = 0;
+    uint32_t feedback_index = 0;
+    for (uint32_t i = 0; i < feedback_type_members_->member_count_; i++) {
+      if (!strcmp(feedback_type_members_->members_[i].name_, "goal_id")) {
+        goal_id_offset = feedback_type_members_->members_[i].offset_;
+        continue;
+      }
+      if (!strcmp(feedback_type_members_->members_[i].name_, "feedback")) {
+        feedback_offset = feedback_type_members_->members_[i].offset_;
+        feedback_index = i;
+        continue;
+      }
+    }
+
+    auto * uuid = reinterpret_cast<unique_identifier_msgs::msg::UUID *>(
+      static_cast<char *>(message.get()) + goal_id_offset);
+
+    std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+    const GoalUUID & goal_id = uuid->uuid;
+    if (goal_handles_.count(goal_id) == 0) {
+      RCLCPP_DEBUG(
+        this->get_logger(),
+        "Received feedback for unknown goal. Ignoring...");
+      return;
+    }
+    typename GenericClientGoalHandle::SharedPtr goal_handle = goal_handles_[goal_id].lock();
+    // Forget about the goal if there are no more user references
+    if (!goal_handle) {
+      RCLCPP_DEBUG(
+        this->get_logger(),
+        "Dropping weak reference to goal handle during feedback callback");
+      goal_handles_.erase(goal_id);
+      return;
+    }
+
+    auto feedback_type_intro = get_message_typesupport_handle(
+      feedback_type_members_->members_[feedback_index].members_,
+      rosidl_typesupport_introspection_cpp::typesupport_identifier);
+
+    auto feedback =
+      create_message(static_cast<IntrospectionMessageMembersPtr>(feedback_type_intro->data));
+    std::memcpy(
+      feedback.get(),
+      static_cast<void *>(static_cast<char *>(message.get())+feedback_offset),
+      static_cast<IntrospectionMessageMembersPtr>(feedback_type_intro->data)->size_of_);
+    goal_handle->call_feedback_callback(goal_handle, feedback);
+  }
+
+  /// \internal
+  std::shared_ptr<void>
+  create_status_message() const override
+  {
+    using GoalStatusMessage = action_msgs::msg::GoalStatusArray;
+    return std::shared_ptr<void>(new GoalStatusMessage());
+  }
+
+  /// \internal
+  void
+  handle_status_message(std::shared_ptr<void> message) override
+  {
+    std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
+    using GoalStatusMessage = action_msgs::msg::GoalStatusArray;
+    auto status_message = std::static_pointer_cast<GoalStatusMessage>(message);
+    for (const GoalStatus & status : status_message->status_list) {
+      const GoalUUID & goal_id = status.goal_info.goal_id.uuid;
+      if (goal_handles_.count(goal_id) == 0) {
+        RCLCPP_DEBUG(
+          this->get_logger(),
+          "Received status for unknown goal. Ignoring...");
+        continue;
+      }
+      typename GenericClientGoalHandle::SharedPtr goal_handle = goal_handles_[goal_id].lock();
+      // Forget about the goal if there are no more user references
+      if (!goal_handle) {
+        RCLCPP_DEBUG(
+          this->get_logger(),
+          "Dropping weak reference to goal handle during status callback");
+        goal_handles_.erase(goal_id);
+        continue;
+      }
+      goal_handle->set_status(status.status);
+    }
+  }
+
+  /// \internal
+  void
+  make_result_aware(typename GenericClientGoalHandle::SharedPtr goal_handle)
+  {
+    // Avoid making more than one request
+    if (goal_handle->set_result_awareness(true)) {
+      return;
+    }
+    auto goal_result_request = create_message(goal_service_request_type_members_);
+
+    size_t goal_id_offset = 0;
+    for (uint32_t i = 0; i < goal_service_request_type_members_->member_count_; i++) {
+      if (!strcmp(goal_service_request_type_members_->members_[i].name_, "goal_id")) {
+        goal_id_offset = goal_service_request_type_members_->members_[i].offset_;
+        break;
+      }
+    }
+
+    auto * uuid = reinterpret_cast<unique_identifier_msgs::msg::UUID *>(
+      static_cast<char *>(goal_result_request.get()) + goal_id_offset);
+    uuid->uuid = goal_handle->get_goal_id();
+    try {
+      this->send_result_request(
+        std::static_pointer_cast<void>(goal_result_request),
+        [goal_handle, this](std::shared_ptr<void> response) mutable
+        {
+          // Wrap the response in a struct with the fields a user cares about
+          WrappedResult wrapped_result;
+
+          // Find result type support
+          const rosidl_message_type_support_t * result_type_support;
+          size_t status_offset;
+          size_t result_offset;
+          for (uint32_t i = 0; i < result_service_response_type_members_->member_count_; i++) {
+            if (!std::strcmp(result_service_response_type_members_->members_[i].name_, "result")) {
+              result_type_support = result_service_response_type_members_->members_[i].members_;
+              result_offset = result_service_response_type_members_->members_[i].offset_;
+              continue;
+            }
+            if (!std::strcmp(result_service_response_type_members_->members_[i].name_, "status")) {
+              status_offset = result_service_response_type_members_->members_[i].offset_;
+              continue;
+            }
+          }
+
+          wrapped_result.result =
+            create_message(static_cast<IntrospectionMessageMembersPtr>(result_type_support->data));
+          std::memcpy(
+            wrapped_result.result.get(),
+            static_cast<void *>(static_cast<char *>(response.get()) + result_offset),
+            static_cast<IntrospectionMessageMembersPtr>(result_type_support->data)->size_of_);
+
+          wrapped_result.goal_id = goal_handle->get_goal_id();
+
+          std::memcpy(
+            static_cast<void *>(&wrapped_result.code),
+            static_cast<void *>(static_cast<char *>(response.get()) + status_offset),
+            sizeof(int8_t)); // ROS_TYPE_INT8
+          goal_handle->set_result(wrapped_result);
+          std::lock_guard<std::recursive_mutex> lock(goal_handles_mutex_);
+          goal_handles_.erase(goal_handle->get_goal_id());
+        });
+    } catch (rclcpp::exceptions::RCLError & ex) {
+      // This will cause an exception when the user tries to access the result
+      goal_handle->invalidate(exceptions::UnawareGoalHandleError(ex.message));
+    }
+  }
+
+  /// \internal
+  std::shared_future<typename CancelResponse::SharedPtr>
+  async_cancel(
+    typename CancelRequest::SharedPtr cancel_request,
+    CancelCallback cancel_callback = nullptr)
+  {
+    // Put promise in the heap to move it around.
+    auto promise = std::make_shared<std::promise<typename CancelResponse::SharedPtr>>();
+    std::shared_future<typename CancelResponse::SharedPtr> future(promise->get_future());
+    this->send_cancel_request(
+      std::static_pointer_cast<void>(cancel_request),
+      [cancel_callback, promise](std::shared_ptr<void> response) mutable
+      {
+        auto cancel_response = std::static_pointer_cast<CancelResponse>(response);
+        promise->set_value(cancel_response);
+        if (cancel_callback) {
+          cancel_callback(cancel_response);
+        }
+      });
+    return future;
+  }
+
+  std::shared_ptr<rcpputils::SharedLibrary> ts_lib_;
+  const rosidl_action_type_support_t * ts_handle_;
+  IntrospectionMessageMembersPtr goal_service_request_type_members_;
+  IntrospectionMessageMembersPtr result_service_response_type_members_;
+  IntrospectionMessageMembersPtr cancel_service_response_type_members_;
+  IntrospectionMessageMembersPtr feedback_type_members_;
+
+  std::map<GoalUUID, typename GenericClientGoalHandle::WeakPtr> goal_handles_;
   std::recursive_mutex goal_handles_mutex_;
 };
 }  // namespace rclcpp_action

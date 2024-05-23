@@ -28,6 +28,7 @@ add_library(${PROJECT_NAME}
   src/server.cpp
   src/server_goal_handle.cpp
   src/types.cpp
+  src/generic_client_goal_handle.cpp
 )
 target_include_directories(${PROJECT_NAME}
   PUBLIC
