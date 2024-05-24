@@ -23,7 +23,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 add_library(${PROJECT_NAME}
-  src/client.cpp
+  src/client_base.cpp
   src/qos.cpp
   src/server.cpp
   src/server_goal_handle.cpp
