@@ -38,7 +38,7 @@ namespace rclcpp_action
  * \param[in] options Options to pass to the underlying `rcl_action_client_t`.
  */
 typename GenericClient::SharedPtr
-create_client(
+create_generic_client(
   rclcpp::node_interfaces::NodeBaseInterface::SharedPtr node_base_interface,
   rclcpp::node_interfaces::NodeGraphInterface::SharedPtr node_graph_interface,
   rclcpp::node_interfaces::NodeLoggingInterface::SharedPtr node_logging_interface,

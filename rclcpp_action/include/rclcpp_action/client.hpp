@@ -30,6 +30,10 @@
 
 #include "rmw/rmw.h"
 
+#include "action_msgs/srv/cancel_goal.hpp"
+#include "action_msgs/msg/goal_info.hpp"
+#include "action_msgs/msg/goal_status_array.hpp"
+
 #include "rclcpp/exceptions.hpp"
 #include "rclcpp/macros.hpp"
 #include "rclcpp/node_interfaces/node_base_interface.hpp"
@@ -51,9 +55,6 @@
 #include "rclcpp_action/types.hpp"
 #include "rclcpp_action/visibility_control.hpp"
 
-#include "action_msgs/msg/goal_response.hpp"
-#include "action_msgs/srv/cancel_goal.hpp"
-#include "action_msgs/msg/goal_status_array.hpp"
 #include "unique_identifier_msgs/msg/uuid.hpp"
 
 namespace rclcpp_action
@@ -922,6 +923,12 @@ public:
     goal_service_request_type_members_ =
       static_cast<IntrospectionMessageMembersPtr>(goal_service_request_type_support_intro->data);
 
+    auto goal_service_response_type_support_intro = get_message_typesupport_handle(
+      ts_handle_->goal_service_type_support->response_typesupport,
+      rosidl_typesupport_introspection_cpp::typesupport_identifier);
+    goal_service_response_type_members_ =
+      static_cast<IntrospectionMessageMembersPtr>(goal_service_response_type_support_intro->data);
+
     auto result_service_response_type_support_intro = get_message_typesupport_handle(
       ts_handle_->result_service_type_support->response_typesupport,
       rosidl_typesupport_introspection_cpp::typesupport_identifier);
@@ -995,21 +1002,43 @@ public:
       goal_request_msg,
       [this, &uuid, options, promise](std::shared_ptr<void> response) mutable
       {
-        auto goal_response = std::static_pointer_cast<action_msgs::msg::GoalResponse>(response);
+        size_t response_accepted_offset = 0;
+        size_t response_timestamp_offset = 0;
+        for(uint32_t i = 0; i < goal_service_response_type_members_->member_count_; i++) {
+          if (!std::strcmp(goal_service_response_type_members_->members_[i].name_, "accepted")) {
+            response_accepted_offset = goal_service_response_type_members_->members_[i].offset_;
+            continue;
+          }
+          if (!std::strcmp(goal_service_response_type_members_->members_[i].name_, "stamp")) {
+            response_timestamp_offset = goal_service_response_type_members_->members_[i].offset_;
+            continue;
+          }
+        }
 
-        if (!goal_response->accepted) {
+        bool response_accepted = false;
+        std::memcpy(
+          static_cast<void *>(&response_accepted),
+          static_cast<void *>(static_cast<char *>(response.get()) + response_accepted_offset),
+          sizeof(bool));
+        if (!response_accepted) {
           promise->set_value(nullptr);
           if (options.goal_response_callback) {
             options.goal_response_callback(nullptr);
           }
           return;
         }
-        GoalInfo goal_info;
+
+        action_msgs::msg::GoalInfo goal_info;
         goal_info.goal_id.uuid = uuid.uuid;
-        goal_info.stamp = goal_response->stamp;
+        std::memcpy(
+          static_cast<void *>(&goal_info.stamp),
+          static_cast<void *>(static_cast<char *>(response.get()) + response_timestamp_offset),
+          sizeof(goal_info.stamp));
+
         // Do not use std::make_shared as friendship cannot be forwarded.
         std::shared_ptr<GenericClientGoalHandle> goal_handle(
-          new GenericClientGoalHandle(goal_info, options.feedback_callback, options.result_callback));
+          new GenericClientGoalHandle(
+            goal_info, options.feedback_callback, options.result_callback));
         {
           std::lock_guard<std::recursive_mutex> guard(goal_handles_mutex_);
           goal_handles_[goal_handle->get_goal_id()] = goal_handle;
@@ -1224,14 +1253,6 @@ public:
 private:
   /// \internal
   std::shared_ptr<void>
-  create_goal_response() const override
-  {
-    using GoalResponse = typename action_msgs::msg::GoalResponse;
-    return std::shared_ptr<void>(new GoalResponse());
-  }
-
-  /// \internal
-  std::shared_ptr<void>
   create_message(IntrospectionMessageMembersPtr message_members) const
   {
     void * message = new uint8_t[message_members->size_of_];
@@ -1243,6 +1264,13 @@ private:
         message_members->fini_function(p);
         delete[] reinterpret_cast<uint8_t *>(p);
       });
+  }
+
+  /// \internal
+  std::shared_ptr<void>
+  create_goal_response() const override
+  {
+    return create_message(goal_service_response_type_members_);
   }
 
   /// \internal
@@ -1448,6 +1476,7 @@ private:
   std::shared_ptr<rcpputils::SharedLibrary> ts_lib_;
   const rosidl_action_type_support_t * ts_handle_;
   IntrospectionMessageMembersPtr goal_service_request_type_members_;
+  IntrospectionMessageMembersPtr goal_service_response_type_members_;
   IntrospectionMessageMembersPtr result_service_response_type_members_;
   IntrospectionMessageMembersPtr cancel_service_response_type_members_;
   IntrospectionMessageMembersPtr feedback_type_members_;
