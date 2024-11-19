@@ -735,7 +735,20 @@ Executor::wait_for_work(std::chrono::nanoseconds timeout)
       this->collect_entities();
     }
   }
+
+  // Lock callback group
+  std::vector<rclcpp::CallbackGroup::SharedPtr> callback_group_sharedptr_list;
+  auto callback_groups_weakptr_list = collector_.get_all_callback_groups();
+  for (auto & callback_group_weakptr : callback_groups_weakptr_list) {
+    auto callback_group_sharedptr = callback_group_weakptr.lock();
+    if (callback_group_sharedptr) {
+      callback_group_sharedptr_list.emplace_back(std::move(callback_group_sharedptr));
+    }
+  }
   this->wait_result_.emplace(wait_set_.wait(timeout));
+  // Free the lock of callback group
+  callback_group_sharedptr_list.clear();
+
   if (!this->wait_result_ || this->wait_result_->kind() == WaitResultKind::Empty) {
     RCUTILS_LOG_WARN_NAMED(
       "rclcpp",
