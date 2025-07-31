@@ -412,6 +412,11 @@ ServerBase::execute_goal_request_received(std::shared_ptr<void> & data)
   GoalUUID uuid = get_goal_id_from_goal_request(message.get());
   convert(uuid, &goal_info);
 
+  std::cout << "--- goal id: "
+    << rclcpp_action::to_string(uuid)
+    << " Received sequence: " << request_header.sequence_number
+    << std::endl;
+
   // Call user's callback, getting the user's response and a ros message to send back
   auto response_pair = call_handle_goal_callback(uuid, message);
 
